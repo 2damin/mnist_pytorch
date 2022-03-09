@@ -5,14 +5,14 @@ import torch.nn.functional as F
 import sys
 
 class MNISTloss(nn.Module):
-    def __init__(self):
+    def __init__(self, device = torch.device("cpu")):
         super(MNISTloss, self).__init__()
-        self.loss = nn.CrossEntropyLoss().cuda()
+        self.loss = nn.CrossEntropyLoss().to(device)
 
     def forward(self, out, gt):
         self.loss(out, gt)
         return self.loss(out, gt)
 
-def get_criterion(crit = "mnist"):
+def get_criterion(crit = "mnist", device = torch.device("cpu")):
     if crit is "mnist":
-        return MNISTloss()
+        return MNISTloss(device = device)
