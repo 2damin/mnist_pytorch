@@ -1,4 +1,5 @@
 import torch
+import os
 import numpy as np
 import PIL
 import sys
@@ -12,11 +13,18 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 from model import models
 from loss import loss
+from util.tools import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MNIST")
     parser.add_argument('--mode', dest='mode', help="Train / Test",
                         default='test', type=str)
+    parser.add_argument('--download', dest='download', help="Whether to download MNIST dataset",
+                        default=False, type=bool)
+    parser.add_argument('--output_dir', dest='output_dir', help="output directory",
+                        default="./output", type=str)
+    parser.add_argument('--checkpoint', dest='checkpoint', help='checkpoint model',
+                        default=None, type=str)
     
     if len(sys.argv) == 1:
         parser.print_help()
@@ -28,14 +36,17 @@ def parse_args():
 def get_data(my_transform):
     print("get_data")
     download_root = './mnist_dataset'
-    train_dataset = MNIST(download_root, transform=my_transform, train=True, download=False)
-    eval_dataset = MNIST(download_root, transform=my_transform, train=False, download=False)
-    test_dataset = MNIST(download_root, transform=my_transform, train=False, download=False)
+    train_dataset = MNIST(download_root, transform=my_transform, train=True, download=args.download)
+    eval_dataset = MNIST(download_root, transform=my_transform, train=False, download=args.download)
+    test_dataset = MNIST(download_root, transform=my_transform, train=False, download=args.download)
     return train_dataset,eval_dataset,test_dataset
 
 def main():
     print(torch.__version__)
-    
+
+    if not os.path.isdir(args.output_dir):
+        os.mkdir(args.output_dir)
+
     if torch.cuda.is_available():
         device = torch.device("cuda")
     else:
@@ -51,8 +62,8 @@ def main():
     
     #Make Dataloader
     train_loader = DataLoader(train_dataset, batch_size=8, num_workers=2, pin_memory=True, drop_last=True, shuffle=True)
-    eval_loader = DataLoader(eval_dataset, batch_size=1, num_workers=1, pin_memory=True, drop_last=True, shuffle=True)
-    test_loader = DataLoader(eval_dataset, batch_size=1, num_workers=1, pin_memory=True, drop_last=True, shuffle=True)
+    eval_loader = DataLoader(eval_dataset, batch_size=1, num_workers=1, pin_memory=True, drop_last=False, shuffle=False)
+    test_loader = DataLoader(eval_dataset, batch_size=1, num_workers=1, pin_memory=True, drop_last=False, shuffle=False)
     
     #Get model
     _model = models.get_model("lenet5")
@@ -60,10 +71,11 @@ def main():
     #summary.summary(model,(1,32,32))    
     
     if args.mode == "train":
+        torch_writer = SummaryWriter(args.output_dir)
         model = _model(batch = 8, n_classes=10, in_channel=1, in_width=32, in_height=32, is_train=True)
-        model.to(device=device)
+        model.to(device)
         model.train()
-        writer = SummaryWriter("runs")
+        # writer = SummaryWriter("runs")
         # dataiter = iter(train_loader)
         # images, labels = dataiter.next()
         # img_grid = torchvision.utils.make_grid(images)
@@ -71,53 +83,70 @@ def main():
         
         #optimizer
         optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
-        epoch = 2
-        criterion = loss.get_criterion(crit="mnist")
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+        epoch = 15
+        criterion = loss.get_criterion(crit="mnist", device=device)
+        iter = 0
         for e in range(epoch):
             total_loss = 0
-            i = 0
             for i, batch in enumerate(train_loader):
-                optimizer.zero_grad()
                 img = batch[0]
                 gt = batch[1]
-                img = img.cuda(non_blocking=True)
-                gt = gt.cuda(non_blocking=True)
+                img = img.to(device)
+                gt = gt.to(device)
                 out = model(img)
                 loss_val = criterion(out, gt)
                 loss_val.backward()
                 optimizer.step()
+                optimizer.zero_grad()
                 total_loss += loss_val.item()
-                writer.add_scalar("Loss/train", loss_val, e)
-                i += 1
-                if i % 100 == 0:
-                    print("{}th iter loss : {}".format(i, loss_val.item()))
+                # writer.add_scalar("Loss/train", loss_val, e)
+                iter += 1
+                if iter % 100 == 0:
+                    print("{}epoch {}th iter loss : {}".format(e, i, loss_val.item()))
+                    torch_writer.add_scalar("lr", get_lr(optimizer), iter)
+                    # torch_writer.add_scalar('example/sec', latency, iter)
+                    torch_writer.add_scalar("loss", loss_val.item(), iter)
             total_loss = total_loss / i
-            print("--{} epoch loss : {}".format(e, total_loss))
             scheduler.step()
-        torch.save(model.state_dict(), "./model.pt")
-        writer.flush()
+            print("-----{} epoch loss : {}".format(e, total_loss))
+            torch.save(model.state_dict(), args.output_dir +"/model_epoch"+str(e)+".pt")
+        # writer.flush()
         print("Train end")
 
-    elif args.mode == "test":
+    elif args.mode == "eval":
         model = _model(batch = 1, n_classes=10, in_channel=1, in_width=32, in_height=32)
-        checkpoint = torch.load("./model.pt")
+        checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint)
-        model.to(device=device)
+        model.to(device)
         model.eval()
         acc = 0
         num_eval = 0
         for i, batch in enumerate(eval_loader):
             img = batch[0]
             gt = batch[1]
-            img = img.cuda(non_blocking=True)
+            img = img.to(device)
             out = model(img)
             out = out.cpu()
             if out == gt:
                 acc += 1
             num_eval += 1
         
-        print("Eval : {} / {}".format(acc, num_eval))
+        print("Evaluation score : {} / {}".format(acc, num_eval))
+    elif args.mode == "test":
+        model = _model(batch = 1, n_classes=10, in_channel=1, in_width=32, in_height=32)
+        checkpoint = torch.load(args.checkpoint)
+        model.load_state_dict(checkpoint)
+        model.to(device)
+        model.eval()
+        for i, batch in enumerate(test_loader):
+            img = batch[0]
+            img = img.to(device)
+            out = model(img)
+            out = out.cpu()
+            print(out)
+            #show input_image
+            show_img(img[0].numpy(), str(out.item()))
     
 
 if __name__ == "__main__":
