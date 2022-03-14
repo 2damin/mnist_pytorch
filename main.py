@@ -1,16 +1,13 @@
 import torch
-import os
+import os,sys
 import numpy as np
-import PIL
-import sys
 import argparse
-from torchvision.datasets import MNIST
+from torchvision.datasets import MNIST, FashionMNIST
 import torchvision.transforms as transforms
 from torch.utils.data.dataloader import DataLoader
 import torch.optim as optim
 import torchsummary as summary
 from torch.utils.tensorboard import SummaryWriter
-import torchvision
 from model import models
 from loss import loss
 from util.tools import *
@@ -33,12 +30,21 @@ def parse_args():
     return args
     
 
-def get_data(my_transform):
+def get_data(name = 'MNIST', transform = None):
     print("get_data")
-    download_root = './mnist_dataset'
-    train_dataset = MNIST(download_root, transform=my_transform, train=True, download=args.download)
-    eval_dataset = MNIST(download_root, transform=my_transform, train=False, download=args.download)
-    test_dataset = MNIST(download_root, transform=my_transform, train=False, download=args.download)
+    if name == 'MNIST':
+        download_root = './mnist_dataset'
+        train_dataset = MNIST(download_root, transform=transform, train=True, download=args.download)
+        eval_dataset = MNIST(download_root, transform=transform, train=False, download=args.download)
+        test_dataset = MNIST(download_root, transform=transform, train=False, download=args.download)
+    elif name == 'FASHION_MNIST':
+        download_root = './fashionmnist_dataset'
+        train_dataset = FashionMNIST(download_root, transform=transform, train=True, download=args.download)
+        eval_dataset = FashionMNIST(download_root, transform=transform, train=False, download=args.download)
+        test_dataset = FashionMNIST(download_root, transform=transform, train=False, download=args.download)
+    else:
+        print("No data of", name)
+
     return train_dataset,eval_dataset,test_dataset
 
 def main():
@@ -58,7 +64,7 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize((0.5,),(1.0,))
     ])
-    train_dataset, eval_dataset, test_dataset = get_data(mnist_transform)
+    train_dataset, eval_dataset, test_dataset = get_data(name = "FASHION_MNIST", transform = mnist_transform)
     
     #Make Dataloader
     train_loader = DataLoader(train_dataset, batch_size=8, num_workers=2, pin_memory=True, drop_last=True, shuffle=True)
