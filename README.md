@@ -1,6 +1,6 @@
-# mnist_pytorch
+# FashionMnist_pytorch
 
-MNIST using PyTorch
+FashionMnist using PyTorch
 
 Model : Lenet5
 
