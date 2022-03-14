@@ -1,3 +1,4 @@
+from re import X
 import torch
 import torch.nn as nn
 import numpy as np
@@ -19,15 +20,30 @@ class lenet5(nn.Module):
         self.fc1 = nn.Linear(84, self.n_classes)
         
         self.loss = nn.CrossEntropyLoss()
+        
+        #he weight initialization
+        torch.nn.init.xavier_uniform_(self.conv0.weight)
+        torch.nn.init.xavier_uniform_(self.conv1.weight)
+        torch.nn.init.xavier_uniform_(self.fc0.weight)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        
+        #batchnorm
+        self.bn0 = nn.BatchNorm2d(6)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.bn2 = nn.BatchNorm2d(120)
+
 
     def forward(self, x):
         x = self.conv0(x)
+        x = self.bn0(x)
         x = torch.tanh(x)
         x = nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
         x = self.conv1(x)
+        x = self.bn1(x)
         x = torch.tanh(x)
         x = nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
         x = self.conv2(x)
+        x = self.bn2(x)
         x = torch.tanh(x)
         x = torch.flatten(x, start_dim=1)
         x = self.fc0(x)
